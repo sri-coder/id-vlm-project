@@ -1,19 +1,3 @@
-"""
-Convert MIDV-500 / MIDV-2020 raw data into instruction-tuning JSONL for VLM fine-tuning.
-
-MIDV datasets ship images + ground-truth JSON annotations per document.
-This script walks the raw directory, matches images to their annotation files,
-extracts the fields we care about, and writes train/val JSONL files.
-
-Expected raw structure (MIDV-500 style, adjust paths if your download differs):
-    raw_dir/
-        <document_type>/
-            images/*.tif or *.jpg
-            ground_truth/*.json
-
-Usage:
-    python prepare_dataset.py --raw_dir data/raw --out_dir data/processed --val_split 0.1
-"""
 import argparse
 import json
 import random
