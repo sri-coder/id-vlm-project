@@ -1,10 +1,4 @@
-"""
-Run the fine-tuned model on a single image -- useful for demos, README
-screenshots, or quick sanity checks after training.
 
-Usage:
-    python infer.py --checkpoint outputs/final --image path/to/id.jpg
-"""
 import argparse
 import json
 

@@ -1,19 +1,4 @@
-"""
-Prepare training data from CORD-v2 (naver-clova-ix/cord-v2), a public
-receipt-understanding dataset on Hugging Face with image + structured field
-annotations already included. Using this instead of MIDV skips the manual
-download/unzip/parse step entirely -- the dataset loads directly.
 
-CORD-v2 fields are receipt-style (store name, item names, prices, total)
-rather than ID-document-style, but the *task* is identical to what
-HyperVerge cares about: extracting structured fields from a photographed
-document under real-world visual noise. That's the point you make in your
-README -- the method transfers, and you can note ID documents as the
-natural next dataset.
-
-Usage:
-    python prepare_cord.py --out_dir data/processed --max_train 500 --max_val 100
-"""
 import argparse
 import json
 import re

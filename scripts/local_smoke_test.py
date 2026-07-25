@@ -1,14 +1,4 @@
-"""
-Local smoke test -- run this on your RTX 3050 laptop BEFORE touching Colab.
 
-Purpose: confirm the model loads in 4-bit, an image loads, generation runs,
-and the output is parseable. This catches 90% of bugs (wrong image format,
-bad prompt template, missing package) for free, before burning your Colab
-GPU quota debugging the same issues.
-
-Usage:
-    python local_smoke_test.py --image path/to/some_id_image.jpg
-"""
 import argparse
 import json
 

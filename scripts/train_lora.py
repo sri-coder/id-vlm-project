@@ -1,17 +1,4 @@
-"""
-LoRA fine-tuning of Qwen2-VL-2B-Instruct -- written as a manual PyTorch
-training loop (no transformers.Trainer). This is deliberate: the point of
-this project is to demonstrate you understand and control the training
-process yourself -- forward pass, loss, backward pass, gradient
-accumulation, optimizer step, LR scheduling, checkpointing -- not that you
-can call a high-level wrapper.
 
-Run this on Colab/Kaggle (free T4, 16GB). Do not run full training on a
-4-6GB laptop GPU -- use local_smoke_test.py locally instead.
-
-Usage:
-    python train_lora.py --config ../configs/lora_config.yaml
-"""
 import argparse
 import json
 import math

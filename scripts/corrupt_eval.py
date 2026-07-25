@@ -1,18 +1,4 @@
-"""
-Adversarial evaluation harness.
 
-Takes your fine-tuned checkpoint, applies a set of real-world corruptions to
-each validation image (blur, rotation, synthetic glare, occlusion, JPEG
-compression), runs field extraction on both clean and corrupted versions,
-and reports per-field accuracy broken down by corruption type.
-
-This is the table that should anchor your writeup -- it's the part of the
-project that goes beyond "I fine-tuned a model" into "I measured and
-understand its failure modes."
-
-Usage:
-    python corrupt_eval.py --checkpoint outputs/final --val_file data/processed/val.jsonl
-"""
 import argparse
 import io
 import json
