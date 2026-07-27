@@ -1,3 +1,14 @@
+"""
+LoRA fine-tuning of Qwen2-VL-2B-Instruct -- written as a manual PyTorch
+training loop (no transformers.Trainer). This is deliberate: the point of
+this project is to demonstrate you understand and control the training
+process yourself -- forward pass, loss, backward pass, gradient
+accumulation, optimizer step, LR scheduling, checkpointing -- not that you
+can call a high-level wrapper.
+
+Usage:
+    python train_lora.py --config configs/lora_config.yaml
+"""
 import argparse
 import json
 import math
@@ -17,15 +28,7 @@ from transformers import (
 )
 
 
-# ---------------------------------------------------------------------------
-# Dataset
-# ---------------------------------------------------------------------------
 class DocFieldDataset(Dataset):
-    """Loads (image, instruction, target JSON) records from a JSONL file and
-    tokenizes them on the fly. Kept intentionally simple/readable over
-    maximally efficient -- readability matters more for a portfolio project
-    an interviewer will actually read."""
-
     def __init__(self, jsonl_path, processor):
         self.records = []
         with open(jsonl_path, "r") as f:
@@ -40,7 +43,9 @@ class DocFieldDataset(Dataset):
         rec = self.records[idx]
         target_json = json.dumps(rec["fields"])
 
-        messages = [
+        image = Image.open(rec["image"]).convert("RGB")
+
+        full_messages = [
             {
                 "role": "user",
                 "content": [
@@ -50,26 +55,25 @@ class DocFieldDataset(Dataset):
             },
             {"role": "assistant", "content": target_json},
         ]
-        text = self.processor.apply_chat_template(messages, tokenize=False)
-        image = Image.open(rec["image"]).convert("RGB")
+        full_text = self.processor.apply_chat_template(full_messages, tokenize=False)
+        full_inputs = self.processor(text=[full_text], images=[image], return_tensors="pt")
+        full_inputs = {k: v.squeeze(0) for k, v in full_inputs.items()}
 
-        model_inputs = self.processor(text=[text], images=[image], return_tensors="pt")
-        model_inputs = {k: v.squeeze(0) for k, v in model_inputs.items()}
+        prompt_messages = full_messages[:1]
+        prompt_text = self.processor.apply_chat_template(
+            prompt_messages, tokenize=False, add_generation_prompt=True
+        )
+        prompt_inputs = self.processor(text=[prompt_text], images=[image], return_tensors="pt")
+        prompt_len = prompt_inputs["input_ids"].shape[1]
 
-        # Causal LM: labels are the same sequence as input_ids. We are NOT
-        # masking the prompt tokens out of the loss in this first pass --
-        # that's a documented next-step improvement (see README), not an
-        # oversight. Masking the prompt so loss only counts on the JSON
-        # answer typically improves convergence and is a natural
-        # "what I'd improve" talking point for an interview.
-        model_inputs["labels"] = model_inputs["input_ids"].clone()
-        return model_inputs
+        labels = full_inputs["input_ids"].clone()
+        labels[:prompt_len] = -100
+        full_inputs["labels"] = labels
+
+        return full_inputs
 
 
 def collate_fn(batch, pad_token_id):
-    """Pads a batch of variable-length tokenized examples. Written by hand
-    (rather than relying on a library default collator) so padding and
-    attention-mask behavior is fully visible and explainable."""
     max_len = max(item["input_ids"].shape[0] for item in batch)
 
     def pad_1d(tensor, pad_value):
@@ -81,21 +85,16 @@ def collate_fn(batch, pad_token_id):
 
     input_ids = torch.stack([pad_1d(b["input_ids"], pad_token_id) for b in batch])
     attention_mask = torch.stack([pad_1d(b["attention_mask"], 0) for b in batch])
-    labels = torch.stack([pad_1d(b["labels"], -100) for b in batch])  # -100 = ignored by loss
+    labels = torch.stack([pad_1d(b["labels"], -100) for b in batch])
 
     out = {"input_ids": input_ids, "attention_mask": attention_mask, "labels": labels}
 
-    # Image-related tensors (pixel_values, image_grid_thw) are fixed-size
-    # per image for Qwen2-VL, so they stack directly without padding.
     for key in batch[0].keys():
         if key not in out:
             out[key] = torch.stack([b[key] for b in batch])
     return out
 
 
-# ---------------------------------------------------------------------------
-# Training loop
-# ---------------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=str, required=True)
@@ -117,7 +116,9 @@ def main():
     model = Qwen2VLForConditionalGeneration.from_pretrained(
         cfg["model_name"], quantization_config=bnb_config, device_map="auto"
     )
-    processor = AutoProcessor.from_pretrained(cfg["model_name"])
+    processor = AutoProcessor.from_pretrained(
+        cfg["model_name"], min_pixels=256 * 28 * 28, max_pixels=1024 * 28 * 28
+    )
 
     lora_cfg = LoraConfig(
         r=cfg["lora"]["r"],
@@ -127,10 +128,9 @@ def main():
         task_type="CAUSAL_LM",
     )
     model = get_peft_model(model, lora_cfg)
-    model.print_trainable_parameters()  # sanity check: should be a small % of total params
+    model.print_trainable_parameters()
     model.train()
 
-    # ---- Data ----
     train_dataset = DocFieldDataset(cfg["data"]["train_file"], processor)
     val_dataset = DocFieldDataset(cfg["data"]["val_file"], processor)
 
@@ -148,7 +148,6 @@ def main():
         collate_fn=lambda b: collate_fn(b, pad_id),
     )
 
-    # ---- Optimizer + LR schedule ----
     optimizer = torch.optim.AdamW(
         [p for p in model.parameters() if p.requires_grad],
         lr=cfg["training"]["learning_rate"],
@@ -167,7 +166,6 @@ def main():
     output_dir = cfg["training"]["output_dir"]
     os.makedirs(output_dir, exist_ok=True)
 
-    # ---- Manual training loop ----
     global_step = 0
     best_val_loss = float("inf")
 
@@ -181,7 +179,7 @@ def main():
             batch = {k: v.to(device) for k, v in batch.items()}
 
             outputs = model(**batch)
-            loss = outputs.loss / grad_accum_steps  # normalize for accumulation
+            loss = outputs.loss / grad_accum_steps
             loss.backward()
 
             running_loss += loss.item() * grad_accum_steps
@@ -199,7 +197,6 @@ def main():
                     avg_loss = running_loss / (step + 1)
                     progress.set_postfix(loss=avg_loss, lr=scheduler.get_last_lr()[0])
 
-        # ---- Validation pass at the end of each epoch ----
         model.eval()
         val_loss_total = 0.0
         with torch.no_grad():
@@ -211,7 +208,6 @@ def main():
         print(f"Epoch {epoch + 1} val_loss: {val_loss:.4f}")
         model.train()
 
-        # ---- Checkpoint ----
         epoch_dir = os.path.join(output_dir, f"checkpoint-epoch{epoch + 1}")
         model.save_pretrained(epoch_dir)
         processor.save_pretrained(epoch_dir)
