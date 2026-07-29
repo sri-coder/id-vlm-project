@@ -11,11 +11,10 @@ from peft import PeftModel
 from transformers import Qwen2VLForConditionalGeneration, AutoProcessor, BitsAndBytesConfig
 
 BASE_MODEL = "Qwen/Qwen2-VL-2B-Instruct"
-TARGET_FIELDS = ["name", "surname", "date_of_birth", "document_number", "expiry_date"]
+TARGET_FIELDS = ["store_name", "total_price", "date", "item_names"]
 PROMPT = (
-    "Extract the following fields from this identity document image and "
-    "return ONLY a JSON object with these keys: "
-    f"{', '.join(TARGET_FIELDS)}. "
+    "Extract the following fields from this receipt image and return ONLY "
+    f"a JSON object with these keys: {', '.join(TARGET_FIELDS)}. "
     "If a field is not visible or not present, use null."
 )
 
