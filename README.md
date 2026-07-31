@@ -1,4 +1,4 @@
-cat > README.md << 'MDEOF'
+
 # Adversarial-Robust Document Field Extraction (VLM Fine-Tuning)
 
 Fine-tuning Qwen2-VL-2B with LoRA to extract structured fields from
